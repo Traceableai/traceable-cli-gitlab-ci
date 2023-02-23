@@ -1,0 +1,26 @@
+.generate_and_run_command:
+    script:
+        - |
+            AVAILABLE_FLAGS=${AVAILABLE_FLAGS:1: -1}
+            AVAILABLE_FLAGS=($AVAILABLE_FLAGS)
+
+            USER_INPUT=${USER_INPUT:1: -1}
+            USER_INPUT=($USER_INPUT)
+
+            n=${#AVAILABLE_FLAGS[@]}
+            
+            for (( itr=0; itr<$n; itr++ ))
+            do
+                input=${USER_INPUT[$itr]}
+                flag=${AVAILABLE_FLAGS[$itr]}
+                
+                if [[ $input == "NULL" ]]
+                then
+                    echo $flag is not supplied
+                else
+                    SCAN_COMMAND="$SCAN_COMMAND $flag $input"
+                fi
+            done
+
+            echo $SCAN_COMMAND
+            $SCAN_COMMAND

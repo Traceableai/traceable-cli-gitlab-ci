@@ -1,0 +1,172 @@
+include:
+  - local: functions.yml
+
+# Define only non sensitive variables here. For sensitive variables, define them in the UI settings. 
+variables:
+    STEP_NAME:
+        value: "init"
+        options:
+            - "init"
+            - "initAndRun"
+            - "run"
+            - "stop"
+        description: "Step name for scan"
+    SCAN_NAME:
+        value: "NULL"
+        description: "Scan name"
+    CLIENT_SCAN_TOKEN:
+        value: "NULL"
+        description: "Access token from platform"
+    CLI_DOWNLOAD_PATH:
+        value: "NULL"
+        description: "Traceable cli download path"
+    CLI_VERSION:
+        value: "latest"
+        description: "Version of CLI you want to use for AST. Current one is 1.0.0-rc.3"
+    TRAFFIC_ENVIRONMENT:
+        value: "NULL"
+        description: "Environment from where AST should observe traffic"
+    PLUGINS:
+        value: "NULL"
+        description: "List of plugins you want to run the AST scan for"
+    POLCIY:
+        value: "NULL"
+        description: "List of policies you want to run the AST scan for"
+    INCLUDE_URL_REGEX:
+        value: "NULL"
+        description: "Include URL patterns to test"
+    EXCLUDE_URL_REGEX:
+        value: "NULL"
+        description: "Exclude URL patterns from scan"
+    POSTMAN_COLLECTION:
+        value: "NULL"
+        description: "Postman Collection"
+    POSTMAN_ENVIRONMENT:
+        value: "NULL"
+        description: "Postman Environment"
+    OPEN_API_SPEC_IDS:
+        value: "NULL"
+        description: "Provide comma separated open api spec ids"
+    OPEN_API_SPEC_FILES:
+        value: "NULL"
+        description: "Provide comma separated files of open api spec documents"
+    TARGET_URL:
+        value: "NULL"
+        description: "Target URL for the tests"
+    TRACEABLE_SERVER:
+        value: "NULL"
+        description: "URL for traceable server, not applicable for SaaS customers"
+    IDLE_TIMEOUT:
+        value: "10"
+        description: "Scan timeout for a scan when it goes in IDLE state"
+    SCAN_TIMEOUT:
+        value: "NULL"
+        description: "Scan timeout in general"
+    MAX_RETRIES:
+        value: "NULL"
+        description: "Max retries for the scan after failure"
+    TRACEABLE_ROOT_CA:
+        value: "NULL"
+        description: "Traceable Root CA"
+    TRACEABLE_CLI_CERT:
+        value: "NULL"
+        description: "Traceable CLI Certificate"
+    TRACEABLE_CLI_KEY:
+        value: "NULL"
+        description: "Traceable CLI Key"
+    TRACEABLE_BINARY_LOCATION:
+        value: traceable-binaries
+
+stages:
+    - input_validation
+    - cli_download
+    - init_and_run_scan_command
+    - init_scan_command
+    - run_scan_command
+    - stop_scan_command
+
+validation-job:
+    stage: input_validation
+    script:
+        - |
+            if [[ $STEP_NAME != "init" ]] && [[ $STEP_NAME != "initAndRun" ]] && [[ $STEP_NAME != "run" ]] && [[ $STEP_NAME != "stop" ]]
+            then
+                echo "Invalid step name supplied"
+                exit 1
+            fi
+            if [[ $CLIENT_SCAN_TOKEN == "NULL" ]]
+            then
+                echo "Invalid client scan token supplied"
+                exit 1
+            fi
+            if [[ $TRAFFIC_ENVIRONMENT == "NULL" ]]
+            then
+                echo "Invalid traffic environment supplied"
+                exit 1
+            fi
+
+download-cli-job:
+    stage: cli_download
+    script:
+        - |
+            mkdir $TRACEABLE_BINARY_LOCATION
+            if [[ $CLI_DOWNLOAD_PATH == "NULL" ]]
+            then
+                if [[ $CLI_VERSION == *"-rc."* ]]
+                then
+                    curl -OL https://downloads.traceable.ai/cli/rc/$CLI_VERSION/traceable-cli-$CLI_VERSION-linux-x86_64.tar.gz
+                else
+                    curl -OL https://downloads.traceable.ai/cli/release/$CLI_VERSION/traceable-cli-$CLI_VERSION-linux-x86_64.tar.gz
+                fi
+                tar -xvf traceable-cli-$CLI_VERSION-linux-x86_64.tar.gz --directory $CI_PROJECT_DIR/$TRACEABLE_BINARY_LOCATION
+            else
+                curl -Lo traceableCli.tar.gz $CLI_DOWNLOAD_PATH
+                tar -xvf traceableCli.tar.gz --directory $CI_PROJECT_DIR/$TRACEABLE_BINARY_LOCATION
+            fi
+    artifacts:
+        paths:
+            - $CI_PROJECT_DIR/$TRACEABLE_BINARY_LOCATION/
+    rules:
+        - if: $STEP_NAME == "init" || $STEP_NAME == "initAndRun"
+
+init-and-run-scan-job:
+    stage: init_and_run_scan_command
+    variables:
+        AVAILABLE_FLAGS: (--scan-name --traffic-env --token --plugins --include-url-regex --exclude-url-regex --target-url --traceable-server --idle-timeout --scan-timeout --max-retries --openapi-spec-ids --openapi-spec-files --policy --postman-collection --postman-environment)
+        USER_INPUT: ($SCAN_NAME $TRAFFIC_ENVIRONMENT $CLIENT_SCAN_TOKEN $PLUGINS $INCLUDE_URL_REGEX $EXCLUDE_URL_REGEX $TARGET_URL $TRACEABLE_SERVER $IDLE_TIMEOUT $SCAN_TIMEOUT $MAX_RETRIES $OPEN_API_SPEC_IDS $OPEN_API_SPEC_FILES $POLCIY $POSTMAN_COLLECTION $POSTMAN_ENVIRONMENT)
+        SCAN_COMMAND: $TRACEABLE_BINARY_LOCATION/traceable ast scan initAndRun
+    script:
+        - !reference [.generate_and_run_command, script]
+    rules:
+        - if: $STEP_NAME == "initAndRun"
+
+init-scan-job:
+    stage: init_scan_command
+    variables:
+        AVAILABLE_FLAGS: (--scan-name --traffic-env --token --plugins --include-url-regex --exclude-url-regex --target-url --traceable-server --scan-timeout --openapi-spec-ids --openapi-spec-files --policy)
+        USER_INPUT: ($SCAN_NAME $TRAFFIC_ENVIRONMENT $CLIENT_SCAN_TOKEN $PLUGINS $INCLUDE_URL_REGEX $EXCLUDE_URL_REGEX $TARGET_URL $TRACEABLE_SERVER $SCAN_TIMEOUT $OPEN_API_SPEC_IDS $OPEN_API_SPEC_FILES $POLCIY)
+        SCAN_COMMAND: $TRACEABLE_BINARY_LOCATION/traceable ast scan init
+    script:
+        - !reference [.generate_and_run_command, script]
+    rules:
+        - if: $STEP_NAME == "init"
+
+run-scan-job:
+    stage: run_scan_command
+    variables:
+        AVAILABLE_FLAGS: (--token --idle-timeout --max-retries --postman-collection --postman-environment)
+        USER_INPUT: ($CLIENT_SCAN_TOKEN $IDLE_TIMEOUT $MAX_RETRIES $POSTMAN_COLLECTION $POSTMAN_ENVIRONMENT)
+        SCAN_COMMAND: $TRACEABLE_BINARY_LOCATION/traceable ast scan run
+    script:
+        - !reference [.generate_and_run_command, script]
+    rules:
+        - if: $STEP_NAME == "run"
+
+stop-scan-job:
+    stage: stop_scan_command
+    script:
+        - $TRACEABLE_BINARY_LOCATION/traceable ast scan stop
+    rules:
+        - if: $STEP_NAME == "stop"
+        
+
